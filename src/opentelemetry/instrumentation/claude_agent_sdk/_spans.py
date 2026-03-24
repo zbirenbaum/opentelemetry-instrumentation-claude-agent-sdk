@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 from opentelemetry.trace import SpanKind, StatusCode, Tracer
@@ -11,12 +12,16 @@ from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     FINISH_REASON_MAP,
     GEN_AI_AGENT_NAME,
     GEN_AI_CONVERSATION_ID,
+    GEN_AI_INPUT_MESSAGES,
     GEN_AI_OPERATION_NAME,
+    GEN_AI_OUTPUT_MESSAGES,
     GEN_AI_REQUEST_MODEL,
     GEN_AI_RESPONSE_FINISH_REASONS,
     GEN_AI_RESPONSE_MODEL,
     GEN_AI_SYSTEM,
+    GEN_AI_SYSTEM_INSTRUCTIONS,
     GEN_AI_TOOL_CALL_ID,
+    GEN_AI_TOOL_DEFINITIONS,
     GEN_AI_TOOL_NAME,
     GEN_AI_TOOL_TYPE,
     GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS,
@@ -123,6 +128,63 @@ def set_error_attributes(span: Span, exception: BaseException) -> None:
     error_type = type(exception).__qualname__
     span.set_attribute(ERROR_TYPE, error_type)
     span.set_status(StatusCode.ERROR, str(exception))
+
+
+# --- Content capture helpers (opt-in) ---
+
+
+def set_prompt_attributes(
+    span: Span,
+    prompt: Any = None,
+    system_prompt: str | None = None,
+    tool_definitions: Any = None,
+) -> None:
+    """Set opt-in prompt content attributes on an invoke_agent span.
+
+    All attributes are gated by the caller's capture_content flag.
+
+    Args:
+        span: The invoke_agent span to annotate.
+        prompt: The user prompt (str or structured message list).
+        system_prompt: The system instructions string.
+        tool_definitions: Tool definitions list from ClaudeAgentOptions.
+    """
+    if prompt is not None:
+        if isinstance(prompt, list):
+            messages: list[Any] = prompt
+        elif isinstance(prompt, str):
+            messages = [{"role": "user", "content": prompt}]
+        else:
+            messages = [{"role": "user", "content": str(prompt)}]
+        try:
+            span.set_attribute(GEN_AI_INPUT_MESSAGES, json.dumps(messages))
+        except (TypeError, ValueError):
+            span.set_attribute(GEN_AI_INPUT_MESSAGES, str(messages))
+
+    if system_prompt is not None:
+        span.set_attribute(GEN_AI_SYSTEM_INSTRUCTIONS, system_prompt)
+
+    if tool_definitions is not None:
+        try:
+            span.set_attribute(GEN_AI_TOOL_DEFINITIONS, json.dumps(tool_definitions))
+        except (TypeError, ValueError):
+            span.set_attribute(GEN_AI_TOOL_DEFINITIONS, str(tool_definitions))
+
+
+def set_response_content(span: Span, content: Any) -> None:
+    """Set gen_ai.output.messages on an invoke_agent span from AssistantMessage content.
+
+    Args:
+        span: The invoke_agent span to annotate.
+        content: AssistantMessage.content (str or list of content blocks).
+    """
+    if content is None:
+        return
+    messages = [{"role": "assistant", "content": content}]
+    try:
+        span.set_attribute(GEN_AI_OUTPUT_MESSAGES, json.dumps(messages))
+    except (TypeError, ValueError):
+        span.set_attribute(GEN_AI_OUTPUT_MESSAGES, str(messages))
 
 
 # --- Tool span helpers ---

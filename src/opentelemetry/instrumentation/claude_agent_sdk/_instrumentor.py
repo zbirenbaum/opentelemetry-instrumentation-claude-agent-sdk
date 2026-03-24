@@ -34,6 +34,8 @@ from opentelemetry.instrumentation.claude_agent_sdk._metrics import (
 from opentelemetry.instrumentation.claude_agent_sdk._spans import (
     create_invoke_agent_span,
     set_error_attributes,
+    set_prompt_attributes,
+    set_response_content,
     set_response_model,
     set_result_attributes,
 )
@@ -170,17 +172,28 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
         )
         set_invocation_context(ctx)
 
+        # Capture opt-in prompt content before the call
+        if self._capture_content:
+            prompt = kwargs.get("prompt") if kwargs.get("prompt") is not None else (args[0] if args else None)
+            system_prompt = getattr(options, "system_prompt", None) if options else None
+            tools = getattr(options, "tools", None) or getattr(options, "allowed_tools", None) if options else None
+            set_prompt_attributes(span, prompt=prompt, system_prompt=system_prompt, tool_definitions=tools)
+
         error_occurred: BaseException | None = None
         try:
             from claude_agent_sdk import AssistantMessage, ResultMessage
 
             async for message in wrapped(*args, **kwargs):
-                # Intercept AssistantMessage for model name
+                # Intercept AssistantMessage for model name and opt-in content
                 if isinstance(message, AssistantMessage):
                     model = getattr(message, "model", None)
                     if model:
                         ctx.set_model(model)
                         set_response_model(span, model)
+                    if self._capture_content:
+                        content = getattr(message, "content", None)
+                        if content is not None:
+                            set_response_content(span, content)
 
                 # Intercept ResultMessage for finalization
                 if isinstance(message, ResultMessage):
@@ -294,6 +307,13 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
         )
         set_invocation_context(ctx)
 
+        # Capture opt-in prompt content before the call
+        if capture_content:
+            prompt = kwargs.get("prompt") if kwargs.get("prompt") is not None else (args[0] if args else None)
+            system_prompt = getattr(options, "system_prompt", None) if options else None
+            tools = getattr(options, "tools", None) or getattr(options, "allowed_tools", None) if options else None
+            set_prompt_attributes(span, prompt=prompt, system_prompt=system_prompt, tool_definitions=tools)
+
         # Store context on instance for receive_response() to use
         instance._otel_invocation_ctx = ctx
 
@@ -339,6 +359,10 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
                     if model:
                         ctx.set_model(model)
                         set_response_model(span, model)
+                    if ctx.capture_content:
+                        content = getattr(message, "content", None)
+                        if content is not None:
+                            set_response_content(span, content)
 
                 # Intercept ResultMessage
                 if isinstance(message, ResultMessage):

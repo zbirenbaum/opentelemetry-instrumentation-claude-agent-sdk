@@ -45,6 +45,7 @@ class MockAssistantMessage:
     """Mock for claude_agent_sdk AssistantMessage (no 'type' field)."""
 
     model: str = "claude-sonnet-4-20250514"
+    content: list = field(default_factory=lambda: [{"type": "text", "text": "Hello, I'm Claude!"}])
 
 
 @dataclass

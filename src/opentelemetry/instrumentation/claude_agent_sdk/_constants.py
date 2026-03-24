@@ -78,6 +78,12 @@ DURATION_BUCKETS = [
     81.92,
 ]
 
+# --- Content Capture Attributes (opt-in) ---
+GEN_AI_SYSTEM_INSTRUCTIONS = "gen_ai.system_instructions"
+GEN_AI_INPUT_MESSAGES = "gen_ai.input.messages"
+GEN_AI_OUTPUT_MESSAGES = "gen_ai.output.messages"
+GEN_AI_TOOL_DEFINITIONS = "gen_ai.tool.definitions"
+
 # --- Finish Reason Mapping ---
 FINISH_REASON_MAP: dict[str, str] = {
     "success": "end_turn",

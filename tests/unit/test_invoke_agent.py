@@ -18,10 +18,13 @@ from opentelemetry.trace import SpanKind, StatusCode
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     ERROR_TYPE,
     GEN_AI_CONVERSATION_ID,
+    GEN_AI_INPUT_MESSAGES,
     GEN_AI_OPERATION_NAME,
+    GEN_AI_OUTPUT_MESSAGES,
     GEN_AI_RESPONSE_FINISH_REASONS,
     GEN_AI_RESPONSE_MODEL,
     GEN_AI_SYSTEM,
+    GEN_AI_SYSTEM_INSTRUCTIONS,
     GEN_AI_USAGE_INPUT_TOKENS,
     GEN_AI_USAGE_OUTPUT_TOKENS,
     OPERATION_INVOKE_AGENT,
@@ -41,6 +44,7 @@ def _create_mock_sdk(messages: list[Any] | None = None) -> ModuleType:
     @dataclass
     class AssistantMessage:
         model: str = "claude-sonnet-4-20250514"
+        content: list = field(default_factory=lambda: [{"type": "text", "text": "Hello, I'm Claude!"}])
 
     @dataclass
     class ResultMessage:
@@ -302,5 +306,101 @@ class TestInvokeAgentSpan:
             spans = exporter.get_finished_spans()
             assert len(spans) == 1
             assert spans[0].parent is None
+        finally:
+            instrumentor.uninstrument()
+
+
+class TestContentCapture:
+    """Tests for opt-in prompt and response content capture (gen_ai semantic conventions)."""
+
+    async def test_input_messages_captured_when_enabled(self, mock_sdk, otel_setup):
+        """gen_ai.input.messages should be set when capture_content=True."""
+        tp, mp, exporter, _reader = otel_setup
+        instrumentor = ClaudeAgentSdkInstrumentor()
+        instrumentor.instrument(tracer_provider=tp, meter_provider=mp, capture_content=True)
+
+        try:
+            import claude_agent_sdk
+
+            async for _ in claude_agent_sdk.query(prompt="What is the capital of France?"):
+                pass
+
+            spans = exporter.get_finished_spans()
+            attrs = dict(spans[0].attributes or {})
+            assert GEN_AI_INPUT_MESSAGES in attrs
+            import json
+
+            messages = json.loads(attrs[GEN_AI_INPUT_MESSAGES])
+            assert messages == [{"role": "user", "content": "What is the capital of France?"}]
+        finally:
+            instrumentor.uninstrument()
+
+    async def test_output_messages_captured_when_enabled(self, mock_sdk, otel_setup):
+        """gen_ai.output.messages should be set from AssistantMessage.content when capture_content=True."""
+        tp, mp, exporter, _reader = otel_setup
+        instrumentor = ClaudeAgentSdkInstrumentor()
+        instrumentor.instrument(tracer_provider=tp, meter_provider=mp, capture_content=True)
+
+        try:
+            import claude_agent_sdk
+
+            async for _ in claude_agent_sdk.query(prompt="test"):
+                pass
+
+            spans = exporter.get_finished_spans()
+            attrs = dict(spans[0].attributes or {})
+            assert GEN_AI_OUTPUT_MESSAGES in attrs
+            import json
+
+            messages = json.loads(attrs[GEN_AI_OUTPUT_MESSAGES])
+            assert messages[0]["role"] == "assistant"
+            assert messages[0]["content"] == [{"type": "text", "text": "Hello, I'm Claude!"}]
+        finally:
+            instrumentor.uninstrument()
+
+    async def test_system_instructions_captured_when_enabled(self, otel_setup):
+        """gen_ai.system_instructions should be set from options.system_prompt when capture_content=True."""
+        mock_module = _create_mock_sdk()
+        original = sys.modules.get("claude_agent_sdk")
+        sys.modules["claude_agent_sdk"] = mock_module
+
+        tp, mp, exporter, _reader = otel_setup
+        instrumentor = ClaudeAgentSdkInstrumentor()
+        instrumentor.instrument(tracer_provider=tp, meter_provider=mp, capture_content=True)
+
+        try:
+            import claude_agent_sdk
+
+            options = claude_agent_sdk.ClaudeAgentOptions(system_prompt="You are a helpful assistant.")
+            async for _ in claude_agent_sdk.query(prompt="test", options=options):
+                pass
+
+            spans = exporter.get_finished_spans()
+            attrs = dict(spans[0].attributes or {})
+            assert attrs[GEN_AI_SYSTEM_INSTRUCTIONS] == "You are a helpful assistant."
+        finally:
+            instrumentor.uninstrument()
+            if original is not None:
+                sys.modules["claude_agent_sdk"] = original
+            else:
+                sys.modules.pop("claude_agent_sdk", None)
+
+    async def test_content_not_captured_by_default(self, mock_sdk, otel_setup):
+        """No content attributes should appear when capture_content is not set (default=False)."""
+        tp, mp, exporter, _reader = otel_setup
+        instrumentor = ClaudeAgentSdkInstrumentor()
+        instrumentor.instrument(tracer_provider=tp, meter_provider=mp)  # capture_content defaults to False
+
+        try:
+            import claude_agent_sdk
+
+            async for _ in claude_agent_sdk.query(prompt="What is the capital of France?"):
+                pass
+
+            spans = exporter.get_finished_spans()
+            attrs = dict(spans[0].attributes or {})
+            assert GEN_AI_INPUT_MESSAGES not in attrs
+            assert GEN_AI_OUTPUT_MESSAGES not in attrs
+            assert GEN_AI_SYSTEM_INSTRUCTIONS not in attrs
         finally:
             instrumentor.uninstrument()
