@@ -19,7 +19,7 @@ Templates requiring updates:
 Follow-up TODOs: None.
 -->
 
-# opentelemetry-instrumentation-claude-agent-sdk Constitution
+# opentelemetry-claude-agent-sdk Constitution
 
 ## Core Principles
 

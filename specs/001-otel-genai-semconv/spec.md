@@ -204,4 +204,4 @@ A developer debugging prompt engineering issues opts into content capture and se
 - The Python SDK supports `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SubagentStart`, `SubagentStop`, `Stop`, `Notification`, `UserPromptSubmit`, `PreCompact`, and `PermissionRequest` hooks. `SessionStart` and `SessionEnd` are TypeScript-only and not available as Python SDK callbacks.
 - SDK hooks receive `tool_use_id` as the second parameter, which uniquely identifies a tool call across `PreToolUse` and `PostToolUse`/`PostToolUseFailure` events, enabling accurate span correlation.
 - Hook callbacks can use async return (`{"async_": True}`) for fire-and-forget telemetry, but synchronous returns are preferred for span lifecycle management to ensure spans are properly started before tool execution begins.
-- The package name and namespace will follow OTel instrumentation conventions (e.g., `opentelemetry-instrumentation-claude-agent-sdk` or similar).
+- The package name and namespace will follow OTel instrumentation conventions (e.g., `opentelemetry-claude-agent-sdk` or similar).

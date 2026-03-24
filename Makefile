@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 
 # --- Project Settings ---
-PROJECT_NAME := opentelemetry-instrumentation-claude-agent-sdk
+PROJECT_NAME := opentelemetry-claude-agent-sdk
 SRC_DIR := src
 TEST_DIR := tests
 MIN_COVERAGE := 80

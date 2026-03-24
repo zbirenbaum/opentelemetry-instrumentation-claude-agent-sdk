@@ -1,4 +1,4 @@
-# opentelemetry-instrumentation-claude-agent-sdk
+# opentelemetry-claude-agent-sdk
 
 OpenTelemetry instrumentation for the [Anthropic Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk).
 
@@ -23,13 +23,13 @@ This package provides automatic tracing and metrics for Claude Agent SDK operati
 ## Installation
 
 ```bash
-pip install opentelemetry-instrumentation-claude-agent-sdk
+pip install opentelemetry-claude-agent-sdk
 ```
 
 With the Claude Agent SDK (if not already installed):
 
 ```bash
-pip install opentelemetry-instrumentation-claude-agent-sdk[instruments]
+pip install opentelemetry-claude-agent-sdk[instruments]
 ```
 
 ## Requirements

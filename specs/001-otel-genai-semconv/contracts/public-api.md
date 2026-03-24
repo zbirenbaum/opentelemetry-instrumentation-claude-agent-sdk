@@ -1,4 +1,4 @@
-# Public API Contract: opentelemetry-instrumentation-claude-agent-sdk
+# Public API Contract: opentelemetry-claude-agent-sdk
 
 **Version**: 0.1.0
 **Date**: 2026-02-28

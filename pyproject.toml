@@ -3,7 +3,7 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
-name = "opentelemetry-instrumentation-claude-agent-sdk"
+name = "opentelemetry-claude-agent-sdk"
 dynamic = ["version"]
 description = "OpenTelemetry instrumentation for the Anthropic Claude Agent SDK"
 readme = "README.md"
@@ -54,9 +54,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/zbirenbaum/opentelemetry-instrumentation-claude-agent-sdk"
-Repository = "https://github.com/zbirenbaum/opentelemetry-instrumentation-claude-agent-sdk"
-Issues = "https://github.com/zbirenbaum/opentelemetry-instrumentation-claude-agent-sdk/issues"
+Homepage = "https://github.com/zbirenbaum/opentelemetry-claude-agent-sdk"
+Repository = "https://github.com/zbirenbaum/opentelemetry-claude-agent-sdk"
+Issues = "https://github.com/zbirenbaum/opentelemetry-claude-agent-sdk/issues"
 
 [project.entry-points.opentelemetry_instrumentor]
 claude-agent-sdk = "opentelemetry.instrumentation.claude_agent_sdk:ClaudeAgentSdkInstrumentor"
