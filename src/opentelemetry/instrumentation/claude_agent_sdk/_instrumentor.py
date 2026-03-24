@@ -56,7 +56,7 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
     def _instrument(self, **kwargs: Any) -> None:
         tracer_provider = kwargs.get("tracer_provider") or get_tracer_provider()
         meter_provider = kwargs.get("meter_provider") or get_meter_provider()
-        capture_content = kwargs.get("capture_content", False)
+        capture_content = kwargs.get("capture_content", True)
         agent_name = kwargs.get("agent_name")
 
         tracer = tracer_provider.get_tracer(_INSTRUMENTATION_NAME, __version__)
