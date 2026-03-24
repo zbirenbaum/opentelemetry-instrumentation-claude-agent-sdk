@@ -130,6 +130,20 @@ def set_error_attributes(span: Span, exception: BaseException) -> None:
     span.set_status(StatusCode.ERROR, str(exception))
 
 
+# --- Serialization helpers ---
+
+
+def _to_serializable(obj: Any) -> Any:
+    """Recursively convert Pydantic models and other non-serializable objects to plain dicts/lists."""
+    if hasattr(obj, "model_dump"):
+        return _to_serializable(obj.model_dump())
+    if isinstance(obj, dict):
+        return {k: _to_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_to_serializable(item) for item in obj]
+    return obj
+
+
 # --- Content capture helpers (opt-in) ---
 
 
@@ -157,7 +171,7 @@ def set_prompt_attributes(
         else:
             messages = [{"role": "user", "content": str(prompt)}]
         try:
-            span.set_attribute(GEN_AI_INPUT_MESSAGES, json.dumps(messages))
+            span.set_attribute(GEN_AI_INPUT_MESSAGES, json.dumps(_to_serializable(messages)))
         except (TypeError, ValueError):
             span.set_attribute(GEN_AI_INPUT_MESSAGES, str(messages))
 
@@ -182,7 +196,7 @@ def set_response_content(span: Span, content: Any) -> None:
         return
     messages = [{"role": "assistant", "content": content}]
     try:
-        span.set_attribute(GEN_AI_OUTPUT_MESSAGES, json.dumps(messages))
+        span.set_attribute(GEN_AI_OUTPUT_MESSAGES, json.dumps(_to_serializable(messages)))
     except (TypeError, ValueError):
         span.set_attribute(GEN_AI_OUTPUT_MESSAGES, str(messages))
 
