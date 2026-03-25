@@ -141,6 +141,8 @@ def _to_serializable(obj: Any) -> Any:
         return {k: _to_serializable(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_to_serializable(item) for item in obj]
+    if hasattr(obj, "__dict__") and not isinstance(obj, type):
+        return _to_serializable(vars(obj))
     return obj
 
 

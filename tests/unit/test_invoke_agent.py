@@ -385,11 +385,11 @@ class TestContentCapture:
             else:
                 sys.modules.pop("claude_agent_sdk", None)
 
-    async def test_content_not_captured_by_default(self, mock_sdk, otel_setup):
-        """No content attributes should appear when capture_content is not set (default=False)."""
+    async def test_content_captured_by_default(self, mock_sdk, otel_setup):
+        """Content attributes should appear when capture_content is not explicitly set (default=True)."""
         tp, mp, exporter, _reader = otel_setup
         instrumentor = ClaudeAgentSdkInstrumentor()
-        instrumentor.instrument(tracer_provider=tp, meter_provider=mp)  # capture_content defaults to False
+        instrumentor.instrument(tracer_provider=tp, meter_provider=mp)  # capture_content defaults to True
 
         try:
             import claude_agent_sdk
@@ -399,8 +399,7 @@ class TestContentCapture:
 
             spans = exporter.get_finished_spans()
             attrs = dict(spans[0].attributes or {})
-            assert GEN_AI_INPUT_MESSAGES not in attrs
-            assert GEN_AI_OUTPUT_MESSAGES not in attrs
-            assert GEN_AI_SYSTEM_INSTRUCTIONS not in attrs
+            assert GEN_AI_INPUT_MESSAGES in attrs
+            assert GEN_AI_OUTPUT_MESSAGES in attrs
         finally:
             instrumentor.uninstrument()
