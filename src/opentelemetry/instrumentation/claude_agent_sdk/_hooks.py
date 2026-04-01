@@ -13,6 +13,7 @@ from opentelemetry.instrumentation.claude_agent_sdk._context import get_invocati
 from opentelemetry.instrumentation.claude_agent_sdk._spans import (
     create_execute_tool_span,
     set_tool_error_attributes,
+    tool_result_to_semconv_message,
 )
 
 if TYPE_CHECKING:
@@ -140,12 +141,12 @@ def build_instrumentation_hooks(
         if span is None:
             return {}
 
-        # Optionally capture tool result
+        # Optionally capture tool result and append to conversation history
+        tool_response = _get_field(input_data, "tool_response")
         if capture_content and ctx.capture_content:
-            tool_response = _get_field(input_data, "tool_response")
             if tool_response is not None:
-                result_str = str(tool_response)
-                span.set_attribute(GEN_AI_TOOL_CALL_RESULT, result_str)
+                span.set_attribute(GEN_AI_TOOL_CALL_RESULT, str(tool_response))
+            ctx.append_message(tool_result_to_semconv_message(tool_use_id, tool_response))
 
         span.end()
         return {}

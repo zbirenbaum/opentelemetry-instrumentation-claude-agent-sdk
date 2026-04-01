@@ -24,6 +24,7 @@ class InvocationContext:
     model: str | None = None
     session_id: str | None = None
     capture_content: bool = False
+    conversation_history: list[dict[str, Any]] = field(default_factory=list)
     _model_set: bool = field(default=False, repr=False)
     parent_otel_context: Any = field(default=None, repr=False)
 
@@ -37,6 +38,10 @@ class InvocationContext:
         if not self._model_set:
             self.model = model
             self._model_set = True
+
+    def append_message(self, message: dict[str, Any]) -> None:
+        """Append a message to the conversation history."""
+        self.conversation_history.append(message)
 
     def cleanup_unclosed_spans(self) -> None:
         """End all active tool/subagent spans with ERROR status.

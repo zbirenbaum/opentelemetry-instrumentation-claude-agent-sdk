@@ -21,9 +21,9 @@ from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     GEN_AI_INPUT_MESSAGES,
     GEN_AI_OPERATION_NAME,
     GEN_AI_OUTPUT_MESSAGES,
+    GEN_AI_PROVIDER_NAME,
     GEN_AI_RESPONSE_FINISH_REASONS,
     GEN_AI_RESPONSE_MODEL,
-    GEN_AI_SYSTEM,
     GEN_AI_SYSTEM_INSTRUCTIONS,
     GEN_AI_USAGE_INPUT_TOKENS,
     GEN_AI_USAGE_OUTPUT_TOKENS,
@@ -135,7 +135,7 @@ class TestInvokeAgentSpan:
 
             attrs = dict(span.attributes or {})
             assert attrs[GEN_AI_OPERATION_NAME] == OPERATION_INVOKE_AGENT
-            assert attrs[GEN_AI_SYSTEM] == SYSTEM_ANTHROPIC
+            assert attrs[GEN_AI_PROVIDER_NAME] == SYSTEM_ANTHROPIC
         finally:
             instrumentor.uninstrument()
 
@@ -331,7 +331,12 @@ class TestContentCapture:
             import json
 
             messages = json.loads(attrs[GEN_AI_INPUT_MESSAGES])
-            assert messages == [{"role": "user", "content": "What is the capital of France?"}]
+            # Full conversation history in semconv format: [{role, parts: [{type, content}]}]
+            assert len(messages) >= 1
+            # First message should be the user prompt
+            user_msg = messages[0]
+            assert user_msg["role"] == "user"
+            assert user_msg["parts"] == [{"type": "text", "content": "What is the capital of France?"}]
         finally:
             instrumentor.uninstrument()
 
@@ -354,7 +359,8 @@ class TestContentCapture:
 
             messages = json.loads(attrs[GEN_AI_OUTPUT_MESSAGES])
             assert messages[0]["role"] == "assistant"
-            assert messages[0]["content"] == [{"type": "text", "text": "Hello, I'm Claude!"}]
+            # Output now uses semconv parts format with type/content converted from TextBlock
+            assert messages[0]["parts"][0]["type"] == "text"
         finally:
             instrumentor.uninstrument()
 
@@ -377,7 +383,10 @@ class TestContentCapture:
 
             spans = exporter.get_finished_spans()
             attrs = dict(spans[0].attributes or {})
-            assert attrs[GEN_AI_SYSTEM_INSTRUCTIONS] == "You are a helpful assistant."
+            import json as json2
+
+            instructions = json2.loads(attrs[GEN_AI_SYSTEM_INSTRUCTIONS])
+            assert instructions == [{"type": "text", "content": "You are a helpful assistant."}]
         finally:
             instrumentor.uninstrument()
             if original is not None:

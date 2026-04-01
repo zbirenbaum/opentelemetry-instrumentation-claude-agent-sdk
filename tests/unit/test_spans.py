@@ -9,10 +9,10 @@ from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     GEN_AI_AGENT_NAME,
     GEN_AI_CONVERSATION_ID,
     GEN_AI_OPERATION_NAME,
+    GEN_AI_PROVIDER_NAME,
     GEN_AI_REQUEST_MODEL,
     GEN_AI_RESPONSE_FINISH_REASONS,
     GEN_AI_RESPONSE_MODEL,
-    GEN_AI_SYSTEM,
     GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS,
     GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS,
     GEN_AI_USAGE_INPUT_TOKENS,
@@ -56,7 +56,7 @@ class TestCreateInvokeAgentSpan:
         spans = span_exporter.get_finished_spans()
         attrs = dict(spans[0].attributes or {})
         assert attrs[GEN_AI_OPERATION_NAME] == OPERATION_INVOKE_AGENT
-        assert attrs[GEN_AI_SYSTEM] == SYSTEM_ANTHROPIC
+        assert attrs[GEN_AI_PROVIDER_NAME] == SYSTEM_ANTHROPIC
         assert attrs[GEN_AI_AGENT_NAME] == "test-agent"
         assert attrs[GEN_AI_REQUEST_MODEL] == "claude-sonnet-4-20250514"
 

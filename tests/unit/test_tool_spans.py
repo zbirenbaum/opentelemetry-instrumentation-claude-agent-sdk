@@ -7,7 +7,7 @@ from opentelemetry.trace import SpanKind, StatusCode
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     ERROR_TYPE,
     GEN_AI_OPERATION_NAME,
-    GEN_AI_SYSTEM,
+    GEN_AI_PROVIDER_NAME,
     GEN_AI_TOOL_CALL_ID,
     GEN_AI_TOOL_NAME,
     GEN_AI_TOOL_TYPE,
@@ -59,7 +59,7 @@ class TestCreateExecuteToolSpan:
         spans = span_exporter.get_finished_spans()
         attrs = dict(spans[0].attributes or {})
         assert attrs[GEN_AI_OPERATION_NAME] == OPERATION_EXECUTE_TOOL
-        assert attrs[GEN_AI_SYSTEM] == SYSTEM_ANTHROPIC
+        assert attrs[GEN_AI_PROVIDER_NAME] == SYSTEM_ANTHROPIC
         assert attrs[GEN_AI_TOOL_NAME] == "Bash"
         assert attrs[GEN_AI_TOOL_CALL_ID] == "toolu_456"
         assert attrs[GEN_AI_TOOL_TYPE] == TOOL_TYPE_FUNCTION

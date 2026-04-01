@@ -32,7 +32,10 @@ from opentelemetry.instrumentation.claude_agent_sdk._metrics import (
     record_token_usage,
 )
 from opentelemetry.instrumentation.claude_agent_sdk._spans import (
+    assistant_content_to_semconv_output,
+    content_to_semconv_input_message,
     create_invoke_agent_span,
+    set_conversation_history,
     set_error_attributes,
     set_prompt_attributes,
     set_response_content,
@@ -179,6 +182,21 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
             tools = getattr(options, "tools", None) or getattr(options, "allowed_tools", None) if options else None
             set_prompt_attributes(span, prompt=prompt, system_prompt=system_prompt, tool_definitions=tools)
 
+            # Initialize conversation history with the user prompt
+            if prompt is not None:
+                if isinstance(prompt, str):
+                    ctx.append_message(content_to_semconv_input_message("user", prompt))
+                elif isinstance(prompt, list):
+                    for msg in prompt:
+                        if isinstance(msg, dict):
+                            role = msg.get("role", "user")
+                            content = msg.get("content", msg.get("parts", ""))
+                            ctx.append_message(content_to_semconv_input_message(role, content))
+                        else:
+                            ctx.append_message(content_to_semconv_input_message("user", msg))
+                else:
+                    ctx.append_message(content_to_semconv_input_message("user", str(prompt)))
+
         error_occurred: BaseException | None = None
         try:
             from claude_agent_sdk import AssistantMessage, ResultMessage
@@ -194,6 +212,8 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
                         content = getattr(message, "content", None)
                         if content is not None:
                             set_response_content(span, content)
+                            # Append assistant message to conversation history
+                            ctx.append_message(assistant_content_to_semconv_output(content))
 
                 # Intercept ResultMessage for finalization
                 if isinstance(message, ResultMessage):
@@ -232,6 +252,10 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
             set_error_attributes(span, exc)
             raise
         finally:
+            # Set full conversation history as input messages
+            if self._capture_content and ctx.conversation_history:
+                set_conversation_history(span, ctx.conversation_history)
+
             # Record duration
             duration = time.monotonic() - ctx.start_time
             metric_attrs = {
@@ -314,6 +338,21 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
             tools = getattr(options, "tools", None) or getattr(options, "allowed_tools", None) if options else None
             set_prompt_attributes(span, prompt=prompt, system_prompt=system_prompt, tool_definitions=tools)
 
+            # Initialize conversation history with the user prompt
+            if prompt is not None:
+                if isinstance(prompt, str):
+                    ctx.append_message(content_to_semconv_input_message("user", prompt))
+                elif isinstance(prompt, list):
+                    for msg in prompt:
+                        if isinstance(msg, dict):
+                            role = msg.get("role", "user")
+                            content = msg.get("content", msg.get("parts", ""))
+                            ctx.append_message(content_to_semconv_input_message(role, content))
+                        else:
+                            ctx.append_message(content_to_semconv_input_message("user", msg))
+                else:
+                    ctx.append_message(content_to_semconv_input_message("user", str(prompt)))
+
         # Store context on instance for receive_response() to use
         instance._otel_invocation_ctx = ctx
 
@@ -363,6 +402,8 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
                         content = getattr(message, "content", None)
                         if content is not None:
                             set_response_content(span, content)
+                            # Append assistant message to conversation history
+                            ctx.append_message(assistant_content_to_semconv_output(content))
 
                 # Intercept ResultMessage
                 if isinstance(message, ResultMessage):
@@ -400,6 +441,10 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
             set_error_attributes(span, exc)
             raise
         finally:
+            # Set full conversation history as input messages
+            if ctx.capture_content and ctx.conversation_history:
+                set_conversation_history(span, ctx.conversation_history)
+
             duration = time.monotonic() - ctx.start_time
             metric_attrs = {
                 GEN_AI_OPERATION_NAME: OPERATION_INVOKE_AGENT,

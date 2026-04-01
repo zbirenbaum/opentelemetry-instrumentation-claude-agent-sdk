@@ -10,15 +10,17 @@ from opentelemetry.trace import SpanKind, StatusCode, Tracer
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     ERROR_TYPE,
     FINISH_REASON_MAP,
+    GEN_AI_AGENT_DESCRIPTION,
+    GEN_AI_AGENT_ID,
     GEN_AI_AGENT_NAME,
     GEN_AI_CONVERSATION_ID,
     GEN_AI_INPUT_MESSAGES,
     GEN_AI_OPERATION_NAME,
     GEN_AI_OUTPUT_MESSAGES,
+    GEN_AI_PROVIDER_NAME,
     GEN_AI_REQUEST_MODEL,
     GEN_AI_RESPONSE_FINISH_REASONS,
     GEN_AI_RESPONSE_MODEL,
-    GEN_AI_SYSTEM,
     GEN_AI_SYSTEM_INSTRUCTIONS,
     GEN_AI_TOOL_CALL_ID,
     GEN_AI_TOOL_DEFINITIONS,
@@ -44,6 +46,8 @@ if TYPE_CHECKING:
 def create_invoke_agent_span(
     tracer: Tracer,
     agent_name: str | None = None,
+    agent_id: str | None = None,
+    agent_description: str | None = None,
     request_model: str | None = None,
     options: Any = None,
 ) -> Span:
@@ -52,6 +56,8 @@ def create_invoke_agent_span(
     Args:
         tracer: OTel tracer instance.
         agent_name: Optional agent name for span name and attribute.
+        agent_id: Optional agent ID.
+        agent_description: Optional agent description.
         request_model: Optional model name for gen_ai.request.model.
         options: Optional ClaudeAgentOptions (used to extract model if request_model not set).
 
@@ -62,11 +68,15 @@ def create_invoke_agent_span(
 
     attributes: dict[str, str | int | list[str]] = {
         GEN_AI_OPERATION_NAME: OPERATION_INVOKE_AGENT,
-        GEN_AI_SYSTEM: SYSTEM_ANTHROPIC,
+        GEN_AI_PROVIDER_NAME: SYSTEM_ANTHROPIC,
     }
 
     if agent_name:
         attributes[GEN_AI_AGENT_NAME] = agent_name
+    if agent_id:
+        attributes[GEN_AI_AGENT_ID] = agent_id
+    if agent_description:
+        attributes[GEN_AI_AGENT_DESCRIPTION] = agent_description
 
     # Resolve model: explicit param > options.model
     model = request_model
@@ -146,6 +156,117 @@ def _to_serializable(obj: Any) -> Any:
     return obj
 
 
+# --- Semconv message format helpers ---
+
+
+def _content_block_to_part(block: Any) -> dict[str, Any]:
+    """Convert a Claude SDK content block to a semconv message part.
+
+    Handles TextBlock, ThinkingBlock, ToolUseBlock, ToolResultBlock,
+    and falls back to a generic part for unknown types.
+    """
+    block_type = type(block).__name__
+
+    if block_type == "TextBlock":
+        return {"type": "text", "content": getattr(block, "text", str(block))}
+
+    if block_type == "ThinkingBlock":
+        return {"type": "reasoning", "content": getattr(block, "thinking", str(block))}
+
+    if block_type == "ToolUseBlock":
+        part: dict[str, Any] = {
+            "type": "tool_call",
+            "name": getattr(block, "name", "unknown"),
+        }
+        tool_id = getattr(block, "id", None)
+        if tool_id:
+            part["id"] = tool_id
+        tool_input = getattr(block, "input", None)
+        if tool_input is not None:
+            part["arguments"] = _to_serializable(tool_input)
+        return part
+
+    if block_type == "ToolResultBlock":
+        part = {"type": "tool_call_response"}
+        tool_use_id = getattr(block, "tool_use_id", None)
+        if tool_use_id:
+            part["id"] = tool_use_id
+        content = getattr(block, "content", None)
+        part["response"] = _to_serializable(content) if content is not None else ""
+        return part
+
+    # Fallback: serialize as generic part
+    serialized = _to_serializable(block)
+    if isinstance(serialized, dict):
+        if "type" not in serialized:
+            serialized["type"] = block_type.lower()
+        return serialized
+    return {"type": block_type.lower(), "content": str(block)}
+
+
+def _content_blocks_to_parts(content: Any) -> list[dict[str, Any]]:
+    """Convert SDK content (str or list of content blocks) to semconv parts list."""
+    if isinstance(content, str):
+        return [{"type": "text", "content": content}]
+    if isinstance(content, list):
+        return [_content_block_to_part(block) for block in content]
+    return [{"type": "text", "content": str(content)}]
+
+
+def content_to_semconv_input_message(role: str, content: Any) -> dict[str, Any]:
+    """Convert content to a semconv input message with role and parts.
+
+    Args:
+        role: Message role (user, assistant, tool, system).
+        content: Raw content (str, list of content blocks, or dict).
+
+    Returns:
+        A dict matching the gen_ai.input.messages JSON schema: {role, parts: [...]}.
+    """
+    return {"role": role, "parts": _content_blocks_to_parts(content)}
+
+
+def assistant_content_to_semconv_output(content: Any, finish_reason: str | None = None) -> dict[str, Any]:
+    """Convert assistant content to a semconv output message.
+
+    Args:
+        content: AssistantMessage.content (list of content blocks or str).
+        finish_reason: Optional finish reason (stop, tool_call, etc.).
+
+    Returns:
+        A dict matching the gen_ai.output.messages JSON schema: {role, parts: [...], finish_reason}.
+    """
+    msg: dict[str, Any] = {
+        "role": "assistant",
+        "parts": _content_blocks_to_parts(content),
+    }
+    if finish_reason:
+        msg["finish_reason"] = finish_reason
+    return msg
+
+
+def tool_result_to_semconv_message(tool_use_id: str, response: Any) -> dict[str, Any]:
+    """Create a semconv tool message from a tool result.
+
+    Args:
+        tool_use_id: The tool call ID this result corresponds to.
+        response: The tool's response data.
+
+    Returns:
+        A dict matching the gen_ai.input.messages JSON schema for role=tool.
+    """
+    return {
+        "role": "tool",
+        "parts": [
+            {
+                "type": "tool_call_response",
+                "id": tool_use_id,
+                "response": _to_serializable(response) if response is not None else "",
+            }
+        ],
+    }
+
+
 # --- Content capture helpers (opt-in) ---
 
 
@@ -157,7 +278,7 @@ def set_prompt_attributes(
 ) -> None:
     """Set opt-in prompt content attributes on an invoke_agent span.
 
-    All attributes are gated by the caller's capture_content flag.
+    Formats messages according to the GenAI semantic conventions JSON schemas.
 
     Args:
         span: The invoke_agent span to annotate.
@@ -167,40 +288,79 @@ def set_prompt_attributes(
     """
     if prompt is not None:
         if isinstance(prompt, list):
-            messages: list[Any] = prompt
+            # Already structured messages — convert each to semconv format
+            messages: list[dict[str, Any]] = []
+            for msg in prompt:
+                if isinstance(msg, dict):
+                    role = msg.get("role", "user")
+                    content = msg.get("content", msg.get("parts", ""))
+                    messages.append(content_to_semconv_input_message(role, content))
+                else:
+                    messages.append(content_to_semconv_input_message("user", msg))
         elif isinstance(prompt, str):
-            messages = [{"role": "user", "content": prompt}]
+            messages = [content_to_semconv_input_message("user", prompt)]
         else:
-            messages = [{"role": "user", "content": str(prompt)}]
+            messages = [content_to_semconv_input_message("user", str(prompt))]
         try:
-            span.set_attribute(GEN_AI_INPUT_MESSAGES, json.dumps(_to_serializable(messages)))
+            span.set_attribute(GEN_AI_INPUT_MESSAGES, json.dumps(messages))
         except (TypeError, ValueError):
             span.set_attribute(GEN_AI_INPUT_MESSAGES, str(messages))
 
     if system_prompt is not None:
-        span.set_attribute(GEN_AI_SYSTEM_INSTRUCTIONS, system_prompt)
+        # Semconv system instructions format: [{type: "text", content: "..."}]
+        instructions = [{"type": "text", "content": system_prompt}]
+        try:
+            span.set_attribute(GEN_AI_SYSTEM_INSTRUCTIONS, json.dumps(instructions))
+        except (TypeError, ValueError):
+            span.set_attribute(GEN_AI_SYSTEM_INSTRUCTIONS, str(instructions))
 
     if tool_definitions is not None:
         try:
-            span.set_attribute(GEN_AI_TOOL_DEFINITIONS, json.dumps(tool_definitions))
+            span.set_attribute(GEN_AI_TOOL_DEFINITIONS, json.dumps(_to_serializable(tool_definitions)))
         except (TypeError, ValueError):
             span.set_attribute(GEN_AI_TOOL_DEFINITIONS, str(tool_definitions))
 
 
-def set_response_content(span: Span, content: Any) -> None:
+def set_response_content(span: Span, content: Any, finish_reason: str | None = None) -> None:
     """Set gen_ai.output.messages on an invoke_agent span from AssistantMessage content.
+
+    Formats output according to the GenAI output messages JSON schema.
 
     Args:
         span: The invoke_agent span to annotate.
         content: AssistantMessage.content (str or list of content blocks).
+        finish_reason: Optional finish reason.
     """
     if content is None:
         return
-    messages = [{"role": "assistant", "content": content}]
+
+    # Determine finish_reason from content: if any tool_call parts, it's "tool_call"
+    if finish_reason is None and isinstance(content, list):
+        for block in content:
+            if type(block).__name__ == "ToolUseBlock":
+                finish_reason = "tool_call"
+                break
+
+    messages = [assistant_content_to_semconv_output(content, finish_reason)]
     try:
-        span.set_attribute(GEN_AI_OUTPUT_MESSAGES, json.dumps(_to_serializable(messages)))
+        span.set_attribute(GEN_AI_OUTPUT_MESSAGES, json.dumps(messages))
     except (TypeError, ValueError):
         span.set_attribute(GEN_AI_OUTPUT_MESSAGES, str(messages))
+
+
+def set_conversation_history(span: Span, history: list[dict[str, Any]]) -> None:
+    """Set gen_ai.input.messages to the full conversation history.
+
+    Args:
+        span: The invoke_agent span to annotate.
+        history: Full conversation history in semconv format.
+    """
+    if not history:
+        return
+    try:
+        span.set_attribute(GEN_AI_INPUT_MESSAGES, json.dumps(history))
+    except (TypeError, ValueError):
+        span.set_attribute(GEN_AI_INPUT_MESSAGES, str(history))
 
 
 # --- Tool span helpers ---
@@ -242,7 +402,7 @@ def create_execute_tool_span(
 
     attributes: dict[str, str] = {
         GEN_AI_OPERATION_NAME: OPERATION_EXECUTE_TOOL,
-        GEN_AI_SYSTEM: SYSTEM_ANTHROPIC,
+        GEN_AI_PROVIDER_NAME: SYSTEM_ANTHROPIC,
         GEN_AI_TOOL_NAME: tool_name,
         GEN_AI_TOOL_CALL_ID: tool_use_id,
         GEN_AI_TOOL_TYPE: tool_type,
